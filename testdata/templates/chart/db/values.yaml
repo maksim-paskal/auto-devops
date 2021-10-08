@@ -1,0 +1,10 @@
+image: docker-hub-proxy.test.com/library/percona:8.0.25-15
+
+pv:
+  size: 10Gi
+  storageClassName: null
+
+mysql:
+  database: {% .Answers.name | quote %}
+  user: {% .Answers.name | quote %}
+  password: {% .Answers.name | quote %}

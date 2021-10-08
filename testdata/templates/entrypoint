@@ -1,0 +1,38 @@
+#!/bin/bash
+set -ex
+: ${APP_ENV:='prod'}
+APP="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+case "$1" in
+  composerInstall)
+  cd $APP
+  if [ ! -f ~/.ssh/id_rsa ]; then
+    echo add private key...
+    mkdir -p ~/.ssh
+    cp /k8s-configs/id_rsa ~/.ssh/id_rsa
+    ssh-keyscan git.test.com > ~/.ssh/known_hosts
+  fi
+  # https://symfony.com/doc/3.4/deployment.html
+  composer install -n -vvv --optimize-autoloader
+  ;;
+  test)
+  vendor/bin/phpunit --fail-on-warning --testsuite Unit --coverage-clover phpunit.coverage.xml --log-junit phpunit.report.xml --coverage-html tests/html
+  ;;
+  testOnly)
+  vendor/bin/phpunit --fail-on-warning --testsuite Unit
+  ;;
+  migrationMysql)
+  php /app/bin/console phinx:migrate -vvv --no-interaction
+  ;;
+  migrationMysqlGenerateMain)
+  php /app/bin/console doctrine:migrations:generate -vvv --no-interaction
+  ;;
+  checkCodeStyle)
+  php ./vendor/bin/phpcs $2 -s
+  ;;
+  fixCodeStyle)
+  php ./vendor/bin/phpcbf $2 -s
+  ;;
+  *)
+  exit 1
+esac

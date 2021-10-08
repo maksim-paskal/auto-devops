@@ -1,0 +1,4 @@
+apiVersion: v2
+name: db
+version: 0.0.1
+icon: https://helm.sh/img/helm.svg

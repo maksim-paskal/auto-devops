@@ -1,0 +1,63 @@
+runAsUser: 1000
+fsGroup: ""
+
+hostIP: "127.0.0.1"
+
+devMode:
+  enabled: false
+  appDir: /dev/null
+  homeDir: /dev/null
+
+global:
+  request_timeout_sec: 30
+  preStopDelaySeconds: 0
+
+registry:
+  path: {% .GitInfo.PathFormated %}
+  name: localhost:32000
+  tag: local
+  imagePullPolicy: IfNotPresent
+
+replicas: 1
+
+mysql:
+  host: "{{ .Release.Name }}-db-mysql"
+  port: "3306"
+  database: {% .Answers.name | quote %}
+  user: {% .Answers.name | quote %}
+  password: {% .Answers.name | quote %}
+
+nodeSelector: {}
+
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+pdb:
+  enabled: false
+  minAvailable: 1
+
+backend:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 100Mi
+
+front:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 100Mi
+
+envoy:
+  validation:
+{% .User.envoyValidation | indent 4 %}
+  image:
+    envoy: docker-hub-proxy.test.com/paskalmaksim/envoy-docker-image:v0.3.2
+    imagePullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 10m
+      memory: 50Mi

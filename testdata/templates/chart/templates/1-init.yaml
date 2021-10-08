@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: 1-{{ .Release.Name }}-init
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-install
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: {{ .Values.runAsUser }}
+      volumes:
+      {{ include "devMode.volumes" . | nindent 6 }}
+      containers:
+      - name: init
+        image: {{ .Values.registry.name }}/{{ .Values.registry.path }}/backend:{{ .Values.registry.tag }}
+        imagePullPolicy: {{ .Values.registry.imagePullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-env
+        args:
+        - sh
+        - -c
+        - |
+          set -ex
+{{ if .Values.devMode.enabled }}
+          rm -rf /app/var/cache
+          /app/entrypoint composerInstall
+{% .User.backendExtraSettings | indent 10 %}
+{{ end }}
+          until nc -z -v -w30 $MYSQL_HOST 3306
+          do
+            echo "Waiting for mysql connection..."
+            # wait for 5 seconds before check again
+            sleep 5
+          done
+
+          if ls /app/migrations/*.php 1> /dev/null 2>&1; then
+            time php bin/console doctrine:migrations:migrate -vvv --no-interaction
+          fi
+        volumeMounts:
+        {{ include "devMode.volumeMounts" . | nindent 8 }}

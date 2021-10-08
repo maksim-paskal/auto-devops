@@ -1,0 +1,7 @@
+replicas: 2
+
+hpa:
+  enabled: true
+
+pdb:
+  enabled: true

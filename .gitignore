@@ -1,0 +1,5 @@
+/.auto-devops.yaml
+/auto-devops.zip
+auto-devops
+dist
+coverage.out

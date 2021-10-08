@@ -1,0 +1,249 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-envoy
+  labels:
+    app: envoy-control-plane
+data:
+  {{ .Release.Name }}: |-
+{{/* envoy yaml template */}}
+    validation:
+{{ toYaml .Values.envoy.validation | indent 6 }}
+    useversionlabel: false
+    kubernetes:
+    # local cluster
+    - cluster_name: {{ .Release.Name }}
+      port: 18000
+      useversionlabel: false
+      selector:
+        app: {{ .Release.Name }}
+    listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8001
+      traffic_direction: INBOUND
+      reuse_port: true
+      filter_chains:
+      - transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            require_client_certificate: true
+            common_tls_context:
+              validation_context_sds_secret_config:
+                name: validation
+                sds_config:
+                  resource_api_version: V3
+                  api_config_source:
+                    api_type: GRPC
+                    transport_api_version: V3
+                    grpc_services:
+                    - envoy_grpc:
+                        cluster_name: xds_cluster
+              tls_certificate_sds_secret_configs:
+              - name: envoy_control_plane_default
+                sds_config:
+                  resource_api_version: V3
+                  api_config_source:
+                    api_type: GRPC
+                    transport_api_version: V3
+                    grpc_services:
+                    - envoy_grpc:
+                        cluster_name: xds_cluster
+        filters:
+        - name: envoy.filters.network.http_connection_manager
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            stat_prefix: ingress_http
+            codec_type: AUTO
+            use_remote_address: true
+            preserve_external_request_id: true
+            stream_idle_timeout: 300s
+            request_timeout: 300s
+            stream_error_on_invalid_http_message: true
+            tracing: {}
+            access_log:
+            - name: envoy.access_loggers.file
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                path: /dev/stdout
+                log_format:
+                  json_format:
+                    protocol: "%PROTOCOL%"
+                    duration: "%DURATION%"
+                    response_code: "%RESPONSE_CODE%"
+                    response_flags: "%RESPONSE_FLAGS%"
+                    x_request_id: "%REQ(X-REQUEST-ID)%"
+                    peer_subject: "%DOWNSTREAM_PEER_SUBJECT%"
+            rds:
+              route_config_name: {{ .Release.Name }}
+              config_source:
+                resource_api_version: V3
+                api_config_source:
+                  api_type: GRPC
+                  transport_api_version: V3
+                  grpc_services:
+                  - envoy_grpc:
+                      cluster_name: xds_cluster
+            http_filters:
+            - name: envoy.filters.http.health_check
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck
+                pass_through_mode: true
+                headers:
+                - name: ":path"
+                  exact_match: "/healthz"
+            - name: envoy.filters.http.router
+    routes:
+    - name: {{ .Release.Name }}
+      virtual_hosts:
+      - name: {{ .Release.Name }}
+        retry_policy:
+          retry_on: "cancelled,connect-failure,gateway-error,refused-stream,reset,resource-exhausted,unavailable"
+          num_retries: 1
+        domains:
+        - "*"
+        routes:
+        - match:
+            prefix: "/"
+          route:
+            cluster: {{ .Release.Name }}-local
+            timeout: {{ .Values.global.request_timeout_sec }}s
+    clusters:
+    - name: {{ .Release.Name }}-local
+      connect_timeout: 0.25s
+      type: STATIC
+      circuit_breakers:
+        thresholds:
+        - max_retries: 10
+      load_assignment:
+        cluster_name: {{ .Release.Name }}-local
+        endpoints:
+        - lb_endpoints:
+          - endpoint:
+              address:
+                socket_address:
+                  address: 127.0.0.1
+                  port_value: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      securityContext:
+        runAsUser: {{ .Values.runAsUser }}
+        runAsGroup: {{ .Values.runAsUser }}
+        fsGroup: {{ default .Values.runAsUser .Values.fsGroup }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 7 }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ .Release.Name }}
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: {{ .Release.Name }}
+      volumes:
+      {{ include "devMode.volumes" . | nindent 6 }}
+      - name: envoy-certs
+        configMap:
+          name: envoy-certs
+      containers:
+      - name: backend
+        image: {{ .Values.registry.name }}/{{ .Values.registry.path }}/backend:{{ .Values.registry.tag }}
+        imagePullPolicy: {{ .Values.registry.imagePullPolicy }}
+        resources:
+{{ toYaml .Values.backend.resources | indent 9 }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Release.Name }}-env
+        volumeMounts:
+        {{ include "devMode.volumeMounts" . | nindent 8 }}
+      - name: front
+        securityContext:
+          runAsUser: 101
+        image: {{ .Values.registry.name }}/{{ .Values.registry.path }}/front:{{ .Values.registry.tag }}
+        imagePullPolicy: {{ .Values.registry.imagePullPolicy }}
+        resources:
+{{ toYaml .Values.front.resources | indent 9 }}
+        volumeMounts:
+        {{ include "devMode.volumeMounts" . | nindent 8 }}
+      - name: envoy
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "cli -drainEnvoy; sleep {{ .Values.global.preStopDelaySeconds }}s; pkill -SIGTERM envoy"]
+        securityContext:
+          runAsUser: 101
+        resources:
+{{ toYaml .Values.envoy.resources | indent 9 }}
+        image: {{ .Values.envoy.image.envoy }}
+        imagePullPolicy: {{ .Values.envoy.image.imagePullPolicy }}
+        args:
+        - /bin/sh
+        - -c
+        - |
+          zone=$(cli)
+          /usr/local/bin/envoy \
+          --config-path /etc/envoy/envoy.yaml \
+          --bootstrap-version 3 \
+          --log-level warn \
+          --service-cluster paket \
+          --service-node {{ .Release.Name }} \
+          --service-zone $zone \
+          --drain-time-s {{ .Values.global.preStopDelaySeconds }}
+        env:
+        - name: ENVOY_SERVICE_NAME
+          value: "{{ .Release.Name }}"
+        - name: JAEGER_AGENT_HOST
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.hostIP
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 18000
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /server_info
+            port: 18000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        ports:
+        - containerPort: 8001  # inbound
+        - containerPort: 18000 # admin
+        volumeMounts:
+        - name: envoy-certs
+          mountPath: /certs

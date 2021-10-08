@@ -1,0 +1,22 @@
+filters:
+- match: "^/entrypoint$"
+  filemode: 0755
+
+questions:
+- key: "name"
+  prompt: "Name of application?"
+  result: '{{ .GitInfo.PathFormated | replace "/" "-" | default .Name }}'
+  validation: "[a-z-]+"
+- key: "webServerPort"
+  prompt: "Web server port?"
+  result: '{{ randPort }}'
+  validation: "[0-9]+"
+- key: "mysqlServerPort"
+  prompt: "MySQL server port?"
+  result: '{{ randPort }}'
+  validation: "[0-9]+"
+
+user:
+  nginxExtraSettings: ""
+  backendExtraSettings: ""
+  envoyValidation: ""

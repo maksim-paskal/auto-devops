@@ -1,0 +1,9 @@
+Gitlab Admin must add this variables to deploy stage/prod:
+
+HELM_VALUES_STAGE
+HELM_VALUES_PROD
+
+Add to .gitignore
+
+.composer_cache
+.env.docker

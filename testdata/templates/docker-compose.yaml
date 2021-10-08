@@ -1,0 +1,70 @@
+version: '3'
+
+services:
+  front:
+    image: localhost:32000/{% .GitInfo.PathFormated %}/front:local
+    depends_on:
+    - backend
+    build:
+      context: .
+      dockerfile: .k8s/front/Dockerfile
+    environment:
+    - HOST=0.0.0.0
+    - BACKEND=backend
+    ports:
+    - {% .Answers.webServerPort %}:8000
+    volumes:
+    - ./app:/app:ro
+  backend:
+    user: "1000"
+    image: localhost:32000/{% .GitInfo.PathFormated %}/backend:local
+    depends_on:
+    - mysql
+    environment:
+    - PHP_IDE_CONFIG=serverName=paket.local
+    - XDEBUG_CONFIG=client_host=${MYIP:-127.0.0.1} remote_port=9003
+    - MYSQL_HOST=mysql
+    - MYSQL_PORT=3306
+    - MYSQL_DATABASE={% .Answers.name %}
+    - MYSQL_USER={% .Answers.name %}
+    - MYSQL_PASSWORD={% .Answers.name %}
+    build:
+      context: .
+      dockerfile: .k8s/backend/Dockerfile
+    command:
+    - /bin/sh
+    - -c
+    - |
+      /app/entrypoint composerInstall
+
+      until nc -z -v -w30 $$MYSQL_HOST 3306
+      do
+        echo "Waiting for mysql connection..."
+        # wait for 5 seconds before check again
+        sleep 5
+      done
+
+      if ls /app/migrations/*.php 1> /dev/null 2>&1; then
+        php bin/console doctrine:migrations:migrate -vvv --no-interaction
+      fi
+
+{% .User.backendExtraSettings | indent 6 %}
+
+      php-fpm
+    volumes:
+    - ./:/app/:rw
+    - ${HOME}/.k8s:/k8s-configs:ro
+  mysql:
+    image: percona:8.0.25-15
+    ports:
+    - {% .Answers.mysqlServerPort %}:3306
+    environment:
+    - MYSQL_DATABASE={% .Answers.name %}
+    - MYSQL_USER={% .Answers.name %}
+    - MYSQL_PASSWORD={% .Answers.name %}
+    - MYSQL_ROOT_PASSWORD=root
+    volumes:
+    - mysql-data:/var/lib/mysql:rw
+
+volumes:
+  mysql-data:

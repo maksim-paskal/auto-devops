@@ -1,0 +1,172 @@
+stages:
+- test
+- analyze
+- build
+- deploy
+
+variables:
+  NAMESPACE: paket-fake-namespace
+  APP_ENV: prod 
+
+phpunit:
+  stage: test
+  image: $CI_REGISTRY/devops/docker/docker:gitlab-php8.0.10
+  only:
+  - merge_requests
+  - main
+  artifacts:
+    expire_in: 30 minutes
+    paths:
+    - ./phpunit.coverage.xml
+    - ./phpunit.report.xml
+  script: |
+    cp /gitlab-config/id_rsa ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+
+    composer install -n -vvv
+    XDEBUG_MODE=coverage vendor/bin/phpunit --fail-on-warning --testsuite Unit --coverage-clover phpunit.coverage.xml --log-junit phpunit.report.xml --coverage-html tests/html
+
+sonarqube_php:
+  stage: analyze
+  allow_failure: true
+  dependencies:
+  - phpunit
+  needs:
+  - phpunit
+  only:
+  - merge_requests
+  - main
+  image: $CI_REGISTRY/devops/docker/docker:gitlab-sonar-scanner
+  variables:
+    GIT_DEPTH: 0
+  script: |
+    # replace to current path
+    regexp='s/\//\\\//g'
+    dir=`pwd | sed $regexp`
+
+    sed -i "s/\/builds\/.*\/[0-9]\/{% .GitInfo.PathFormated | replace "/" "\\/" %}/$dir/g" phpunit.coverage.xml
+    sed -i "s/\/builds\/.*\/[0-9]\/{% .GitInfo.PathFormated | replace "/" "\\/" %}/$dir/g" phpunit.report.xml
+
+    sonar-scanner \
+      -Dsonar.php.coverage.reportPaths=phpunit.coverage.xml \
+      -Dsonar.php.tests.reportPath=phpunit.report.xml \
+      -Dsonar.qualitygate.wait=true
+
+phpcs:
+  stage: test
+  image: $CI_REGISTRY/devops/docker/docker:gitlab-php8.0.10
+  only:
+  - merge_requests
+  - main
+  script: |
+    cp /gitlab-config/id_rsa ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+
+    composer install -n -vvv
+
+    ./vendor/bin/phpcs
+
+build_backend:
+  stage: build
+  only:
+    variables:
+    - $BUILD == "true"
+  dependencies: []
+  image: $CI_REGISTRY/devops/docker/docker:gitlab-php8.0.10
+  script: |
+    cp /gitlab-config/id_rsa ~/.ssh/id_rsa
+    chmod 600 ~/.ssh/id_rsa
+
+    composer install -n -vvv --optimize-autoloader
+
+    docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    
+    export BUILD_STAGE_NAME=${CI_JOB_NAME:6}
+
+    export BUILD_IMAGE_NAME=$CI_REGISTRY/$CI_PROJECT_PATH/$BUILD_STAGE_NAME:$CI_COMMIT_REF_SLUG
+    docker build --network=host --pull -t $BUILD_IMAGE_NAME . -f ./.gitlab-ci/$BUILD_STAGE_NAME/Dockerfile
+    docker push $BUILD_IMAGE_NAME
+
+build_front:
+  stage: build
+  dependencies: []
+  only:
+    variables:
+    - $BUILD == "true"
+  image: $CI_REGISTRY/devops/docker/helm-sluglify:1.0.3
+  script: |
+    docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    
+    export BUILD_STAGE_NAME=${CI_JOB_NAME:6}
+
+    export BUILD_IMAGE_NAME=$CI_REGISTRY/$CI_PROJECT_PATH/$BUILD_STAGE_NAME:$CI_COMMIT_REF_SLUG
+    docker build --network=host --pull -t $BUILD_IMAGE_NAME . -f ./.k8s/$BUILD_STAGE_NAME/Dockerfile
+    docker push $BUILD_IMAGE_NAME
+
+deploy_branch:
+  when: manual
+  stage: deploy
+  only:
+    variables:
+    - $BUILD == "true"
+    - $DEPLOY == "true"
+  dependencies: []
+  image: $CI_REGISTRY/devops/docker/helm-sluglify:1.0.3
+  script: |
+    set -ex
+    
+    helm upgrade --install {% .Answers.name %}-db ./chart/db --namespace=$NAMESPACE --values .gitlab-ci/helm/db.yaml 
+    kubectl --namespace=$NAMESPACE wait --for=condition=available deployment {% .Answers.name %}-db-mysql --timeout=600s
+
+    kubectl -n $NAMESPACE scale deploy {% .Answers.name %} --replicas=0 || true
+    
+    helm upgrade --install {% .Answers.name %} ./chart \
+    --namespace=$NAMESPACE \
+    --set-string registry.name=10.100.0.11:5000 \
+    --set-string registry.tag=$CI_COMMIT_REF_SLUG \
+    --set-string registry.imagePullPolicy=Always
+
+deploy_stage:
+  when: manual
+  stage: deploy
+  only:
+    refs:
+    - tags
+    variables:
+    - $BUILD == "true"
+    - $DEPLOY == "true"
+  dependencies: []
+  image: $CI_REGISTRY/devops/docker/terraform-workspace:1.20.4
+  script: |
+    set -ex
+
+    helm upgrade --install {% .Answers.name %} ./chart \
+    --namespace=paket-main-pp \
+    --values=./.gitlab-ci/helm/stage.yaml \
+    --values=$HELM_VALUES_STAGE \
+    --set-string registry.name=10.100.0.11:5000 \
+    --set-string registry.tag=$CI_COMMIT_REF_SLUG
+
+deploy_prod:
+  when: manual
+  stage: deploy
+  only:
+    refs:
+    - tags
+    variables:
+    - $BUILD == "true"
+    - $DEPLOY == "true"
+  dependencies: []
+  image: $CI_REGISTRY/devops/docker/terraform-workspace:1.20.4
+  script: |
+    set -ex
+
+    export KUBECONFIG=~/.kube/prod
+    AWS_PROFILE=prod aws eks update-kubeconfig --name prod
+
+    helm upgrade --install {% .Answers.name %} ./chart \
+    --namespace=paket \
+    --values=./.gitlab-ci/helm/prod.yaml \
+    --values=$HELM_VALUES_PROD \
+    --set-string registry.name=10.100.0.11:5000 \
+    --set-string registry.tag=$CI_COMMIT_REF_SLUG

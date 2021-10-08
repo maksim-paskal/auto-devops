@@ -1,0 +1,10 @@
+replicas: 2
+
+nodeSelector:
+  failure-domain.beta.kubernetes.io/zone: us-east-1a
+
+hpa:
+  enabled: true
+
+pdb:
+  enabled: true
