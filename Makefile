@@ -12,6 +12,10 @@ run:
 	go run ./cmd -log.level=debug
 	ls -la /tmp/auto-devops
 
+install:
+	goreleaser build --single-target --snapshot --rm-dist --skip-validate
+	sudo mv dist/auto-devops_darwin_amd64/auto-devops /usr/local/bin/auto-devops
+
 test:
 	./scripts/validate-license.sh
 	go fmt ./cmd/... ./pkg/...
