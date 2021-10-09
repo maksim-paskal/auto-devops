@@ -39,11 +39,11 @@ func main() { //nolint:cyclop,funlen
 	}
 
 	if err := config.Init(); err != nil {
-		log.Fatal(err)
+		log.WithError(err).Fatal("error in configuration init")
 	}
 
 	if err := config.Validate(); err != nil {
-		log.Fatal(err)
+		log.WithError(err).Fatal("error validating config")
 	}
 
 	if log.GetLevel() >= log.DebugLevel {
@@ -54,7 +54,7 @@ func main() { //nolint:cyclop,funlen
 		if len(q.Condition) > 0 {
 			show, err := config.Boostrap.Template(q.Condition)
 			if err != nil {
-				log.Fatal(err)
+				log.WithError(err).Fatal("error templating condition")
 			}
 
 			if show == "false" {
@@ -65,7 +65,7 @@ func main() { //nolint:cyclop,funlen
 		for {
 			ok, err := ask.Once(&config.Boostrap.Questions[i])
 			if err != nil {
-				log.Fatal(err)
+				log.WithError(err).Fatal("error asking question")
 			}
 
 			if ok {
@@ -87,14 +87,14 @@ func main() { //nolint:cyclop,funlen
 	if _, err := os.Stat(readmePath); err == nil {
 		readmeBytes, err := ioutil.ReadFile(readmePath)
 		if err != nil {
-			log.Fatal(err)
+			log.WithError(err).Fatal("error reading file")
 		}
 
 		log.Infof("README:\n%s", string(readmeBytes))
 	}
 
 	if err := config.Boostrap.CleanTempDir(); err != nil {
-		log.Fatal(err)
+		log.WithError(err).Fatal("error cleaning temp directory")
 	}
 }
 
@@ -113,7 +113,7 @@ func processAnswers(dryRun bool) {
 
 		filterRule, err := filters.GetFilter(filePathAbs)
 		if err != nil {
-			log.Fatal(err)
+			log.WithError(err).Fatal("error getting filter")
 		}
 
 		if len(filterRule.Match) > 0 {
@@ -130,12 +130,12 @@ func processAnswers(dryRun bool) {
 
 		_, err = templates.TemplateFile(filePath, info, fileMode, dryRun)
 		if err != nil {
-			log.Fatal(err)
+			log.WithError(err).Fatal(filePath)
 		}
 
 		return nil
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.WithError(err).Fatal("error listing files")
 	}
 }
