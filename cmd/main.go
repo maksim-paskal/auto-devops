@@ -95,7 +95,10 @@ func main() { //nolint:cyclop,funlen
 			log.WithError(err).Fatal("error templating README")
 		}
 
-		log.Infof("README:\n%s", readmeString)
+		_, err = ask.Output.Write([]byte(fmt.Sprintf("\n%s\n\n", readmeString)))
+		if err != nil {
+			log.WithError(err).Fatal("error outputing README")
+		}
 	}
 
 	if err := config.Boostrap.CleanTempDir(); err != nil {
