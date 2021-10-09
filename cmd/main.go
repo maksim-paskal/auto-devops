@@ -90,7 +90,12 @@ func main() { //nolint:cyclop,funlen
 			log.WithError(err).Fatal("error reading file")
 		}
 
-		log.Infof("README:\n%s", string(readmeBytes))
+		readmeString, err := config.Boostrap.Template(string(readmeBytes))
+		if err != nil {
+			log.WithError(err).Fatal("error templating README")
+		}
+
+		log.Infof("README:\n%s", readmeString)
 	}
 
 	if err := config.Boostrap.CleanTempDir(); err != nil {
