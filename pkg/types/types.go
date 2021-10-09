@@ -55,7 +55,7 @@ type Boostrap struct {
 	Questions   []BoostrapQuestion
 	Answers     map[string]string
 	GitInfo     BoostrapGitInfo
-	User        interface{}
+	User        map[string]string
 }
 
 func (b Boostrap) String() string {
