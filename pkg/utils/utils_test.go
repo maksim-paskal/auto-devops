@@ -13,6 +13,8 @@ limitations under the License.
 package utils_test
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 	"text/template"
 
@@ -26,13 +28,59 @@ func TestGoTemplateFunc(t *testing.T) {
 
 	fun := utils.GoTemplateFunc(tmpl)
 
-	_, ok := fun["toYaml"].(func(v interface{}) string)
+	toYaml, ok := fun["toYaml"].(func(v interface{}) string)
 	if !ok {
 		t.Fatal("toYaml not correct")
 	}
 
-	_, ok = fun["include"].(func(name string, data interface{}) (string, error))
+	type Test struct {
+		Test string
+	}
+
+	if r := toYaml(Test{Test: "test"}); r != "test: test\n" {
+		t.Fatal("toYaml returns wrong results")
+	}
+
+	randPort, ok := fun["randPort"].(func() int)
 	if !ok {
-		t.Fatal("include not correct")
+		t.Fatal("randPort not correct")
+	}
+
+	if r := randPort(); r < utils.RandPortMin || r > utils.RandPortMax {
+		t.Fatal("randPort rerurns wrong results")
+	}
+}
+
+func TestUnzipFile(t *testing.T) {
+	t.Parallel()
+
+	dir, err := ioutil.TempDir("", "auto-devops-tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.RemoveAll(dir)
+
+	testZip, err := utils.Unzip("testdata/test.zip", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(testZip) != 1 {
+		t.Fatal("zip must contain 1 file")
+	}
+
+	testZipContents, err := ioutil.ReadFile(testZip[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(testZipContents) != "test\n" {
+		t.Fatal("test file incorrect")
+	}
+
+	_, err = utils.Unzip("https://github.com/maksim-paskal/auto-devops/archive/refs/heads/main.zip", dir)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

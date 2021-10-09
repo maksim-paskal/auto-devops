@@ -13,6 +13,7 @@ limitations under the License.
 package types_test
 
 import (
+	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -45,5 +46,23 @@ func TestTemplate(t *testing.T) {
 
 	if r != "test" {
 		t.Fatal("Template method working not correct")
+	}
+}
+
+func TestCleanTempDir(t *testing.T) {
+	t.Parallel()
+
+	dir, err := ioutil.TempDir("", "auto-devops-tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boostrap := types.Boostrap{
+		Name: "test",
+		Dir:  dir,
+	}
+
+	if err := boostrap.CleanTempDir(); err != nil {
+		t.Fatal(err)
 	}
 }
