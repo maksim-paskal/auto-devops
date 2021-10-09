@@ -28,6 +28,10 @@ func TestInit(t *testing.T) {
 	if err := config.Boostrap.CleanTempDir(); err != nil {
 		t.Fatal(err)
 	}
+
+	if err := config.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestGetVersion(t *testing.T) {

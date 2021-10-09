@@ -14,7 +14,6 @@ package utils
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"io"
 	"math/rand"
@@ -22,7 +21,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -123,17 +121,13 @@ func Unzip(src string, dest string) ([]string, error) { //nolint: funlen,cyclop
 	return filenames, nil
 }
 
+const (
+	RandPortMin = 10000
+	RandPortMax = 50000
+)
+
 func GoTemplateFunc(t *template.Template) map[string]interface{} {
 	f := sprig.TxtFuncMap()
-
-	f["include"] = func(name string, data interface{}) (string, error) {
-		buf := bytes.NewBuffer(nil)
-		if err := t.ExecuteTemplate(buf, name, data); err != nil {
-			return "", errors.Wrap(err, "error in ExecuteTemplate")
-		}
-
-		return buf.String(), nil
-	}
 
 	f["toYaml"] = func(v interface{}) string {
 		data, err := yaml.Marshal(v)
@@ -144,7 +138,7 @@ func GoTemplateFunc(t *template.Template) map[string]interface{} {
 		return string(data)
 	}
 
-	f["randPort"] = func() string {
+	f["randPort"] = func() int {
 		rand.Seed(time.Now().UnixNano())
 
 		min := 10000
@@ -152,7 +146,7 @@ func GoTemplateFunc(t *template.Template) map[string]interface{} {
 
 		randPort := rand.Intn(max-min) + min //nolint:gosec
 
-		return strconv.Itoa(randPort)
+		return randPort
 	}
 
 	return f
