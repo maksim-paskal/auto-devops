@@ -14,6 +14,7 @@ package utils
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"io"
 	"math/rand"
@@ -129,9 +130,31 @@ const (
 func GoTemplateFunc(t *template.Template) map[string]interface{} {
 	f := sprig.TxtFuncMap()
 
+	f["tpl"] = func(tpl string, data interface{}) string {
+		tmpl, err := t.Parse(tpl)
+		if err != nil {
+			log.Warn(err)
+
+			return ""
+		}
+
+		var tplResult bytes.Buffer
+
+		err = tmpl.Execute(&tplResult, data)
+		if err != nil {
+			log.Warn(err)
+
+			return ""
+		}
+
+		return tplResult.String()
+	}
+
 	f["toYaml"] = func(v interface{}) string {
 		data, err := yaml.Marshal(v)
 		if err != nil {
+			log.Warn(err)
+
 			return ""
 		}
 
