@@ -49,6 +49,15 @@ func TestGoTemplateFunc(t *testing.T) {
 	if r := randPort(); r < utils.RandPortMin || r > utils.RandPortMax {
 		t.Fatal("randPort rerurns wrong results")
 	}
+
+	tpl, ok := fun["tpl"].(func(tpl string, data interface{}) string)
+	if !ok {
+		t.Fatal("tpl not correct")
+	}
+
+	if r := tpl("1{{ .Test }}2", Test{Test: "test"}); r != "1test2" {
+		t.Fatal("tpl not correct")
+	}
 }
 
 func TestUnzipFile(t *testing.T) {
