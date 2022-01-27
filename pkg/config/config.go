@@ -32,13 +32,12 @@ import (
 
 const (
 	autoDevopsYaml = ".auto-devops.yaml"
-	autoDevopsZip  = "auto-devops.zip"
 )
 
 //nolint: gochecknoglobals
 var (
 	gitVersion   = "dev"
-	BootstrapZip = flag.String("bootstrap", envDefault("AUTO_DEVOPS_BOOTSTRAP", autoDevopsZip), "path to archive")
+	BootstrapZip = flag.String("bootstrap", os.Getenv("AUTO_DEVOPS_BOOTSTRAP"), "path to archive")
 	LogLevel     = flag.String("log.level", "INFO", "log level")
 	Boostrap     = types.Boostrap{
 		DelimsLeft:  "{%",
@@ -68,16 +67,28 @@ func Init() error { //nolint:cyclop,funlen
 		return errors.Wrap(err, "error creating temp folder")
 	}
 
+	// load initial .auto-devops.yaml
+	err = loadYAML(autoDevopsYaml)
+	if err != nil {
+		log.WithError(err).Debug("not loading initital config")
+	}
+
 	Boostrap.Dir = dir
 	if len(Boostrap.Version) == 0 {
 		Boostrap.Version = GetVersion()
 	}
 
-	log.Debugf("Using %s", *BootstrapZip)
+	if len(*BootstrapZip) > 0 {
+		Boostrap.Bootstrap = *BootstrapZip
+	}
 
-	_, err = utils.Unzip(*BootstrapZip, Boostrap.Dir)
+	if len(Boostrap.Bootstrap) == 0 {
+		log.Fatalf("neen bootstrap zip. Use -bootstrap argument or bootstrap attribute in %s", autoDevopsYaml)
+	}
+
+	_, err = utils.Unzip(Boostrap.Bootstrap, Boostrap.Dir)
 	if err != nil {
-		return errors.Wrap(err, "error unzip")
+		return errors.Wrapf(err, "error unzip %s", Boostrap.Bootstrap)
 	}
 
 	// load server .auto-devops.yaml
@@ -96,14 +107,9 @@ func Init() error { //nolint:cyclop,funlen
 		}
 	}
 
-	configByteUser, err := ioutil.ReadFile(autoDevopsYaml)
+	err = loadYAML(autoDevopsYaml)
 	if err != nil {
 		log.WithError(err).Debug("error reading user ", autoDevopsYaml)
-	} else {
-		err = yaml.Unmarshal(configByteUser, &Boostrap)
-		if err != nil {
-			return errors.Wrap(err, "error parse yaml")
-		}
 	}
 
 	if len(Boostrap.Pwd) == 0 {
@@ -181,15 +187,6 @@ func Validate() error {
 	}
 
 	return nil
-}
-
-func envDefault(name string, defaultValue string) string {
-	r := os.Getenv(name)
-	if len(r) > 0 {
-		return r
-	}
-
-	return defaultValue
 }
 
 func loadGitInfo() error {

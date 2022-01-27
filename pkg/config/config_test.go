@@ -41,14 +41,3 @@ func TestGetVersion(t *testing.T) {
 		t.Fatal("version not correct")
 	}
 }
-
-func TestLogLevel(t *testing.T) {
-	t.Parallel()
-
-	fakeLogLevel := "fake-level"
-	config.LogLevel = &fakeLogLevel
-
-	if err := config.Init(); err == nil {
-		t.Fatal("Init must return error")
-	}
-}

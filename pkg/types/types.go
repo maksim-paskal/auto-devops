@@ -46,6 +46,7 @@ type BoostrapGitInfo struct {
 
 type Boostrap struct {
 	Version     string
+	Bootstrap   string
 	Name        string
 	Dir         string
 	Pwd         string
